@@ -1,5 +1,5 @@
 import os
-from typing import Iterator, TextIO, Dict, Any
+from typing import Any, Dict, Iterator, TextIO
 
 
 def str2bool(string: str) -> bool:

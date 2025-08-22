@@ -1,11 +1,58 @@
-import os
-import ffmpeg
-import whisper
 import argparse
-import warnings
+import os
+import re
+import subprocess
 import tempfile
-from typing import Dict, List, Callable, Any
+import warnings
+from typing import Any, Callable, Dict, List
+
+import whisper
+
 from .utils import filename, str2bool, write_srt
+
+
+def run_ffmpeg_with_progress(cmd_args: List[str], description: str) -> None:
+    print(f"{description}")
+
+    process = subprocess.Popen(
+        cmd_args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        bufsize=1,
+    )
+
+    duration = None
+    stderr_output = []
+
+    if process.stderr:
+        for line in process.stderr:
+            line = line.strip()
+            stderr_output.append(line)
+
+            if "Duration:" in line:
+                duration_match = re.search(r"Duration: (\d+):(\d+):(\d+\.\d+)", line)
+                if duration_match:
+                    h, m, s = duration_match.groups()
+                    duration = int(h) * 3600 + int(m) * 60 + float(s)
+
+            elif "time=" in line and duration:
+                time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
+                if time_match:
+                    h, m, s = time_match.groups()
+                    current_time = int(h) * 3600 + int(m) * 60 + float(s)
+                    progress = min(current_time / duration * 100, 100)
+
+                    print(f"\rProgress: {progress:.1f}%", end="", flush=True)
+
+    process.wait()
+    if process.returncode != 0:
+        print(f"\nFFmpeg error (exit code {process.returncode}):")
+        for line in stderr_output[-10:]:  # Show last 10 lines of error output
+            print(line)
+        raise subprocess.CalledProcessError(process.returncode, cmd_args, "\n".join(stderr_output))
+
+    print("\rProgress: 100.0% - Complete!                ")
 
 
 def main() -> None:
@@ -178,7 +225,8 @@ def main() -> None:
 
     if model_name.endswith(".en"):
         warnings.warn(
-            f"{model_name} is an English-only model, forcing English detection."
+            f"{model_name} is an English-only model, forcing English detection.",
+            stacklevel=2
         )
         args["language"] = "en"
     # if translate task used and language argument is set, then use it
@@ -200,21 +248,19 @@ def main() -> None:
     for path, srt_path in subtitles.items():
         out_path = os.path.join(output_dir, f"{filename(path)}.mp4")
 
-        print(f"Adding subtitles to {filename(path)}...")
+        cmd_args = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            path,
+            "-vf",
+            f"subtitles='{srt_path}':force_style='OutlineColour=&H40000000,BorderStyle=3'",
+            "-c:a",
+            "copy",
+            out_path,
+        ]
 
-        video = ffmpeg.input(path)
-        audio = video.audio
-
-        ffmpeg.concat(
-            video.filter(
-                "subtitles",
-                srt_path,
-                force_style="OutlineColour=&H40000000,BorderStyle=3",
-            ),
-            audio,
-            v=1,
-            a=1,
-        ).output(out_path).run(quiet=True, overwrite_output=True)
+        run_ffmpeg_with_progress(cmd_args, f"Adding subtitles to {filename(path)}...")
 
         print(f"Saved subtitled video to {os.path.abspath(out_path)}.")
 
@@ -225,12 +271,23 @@ def get_audio(paths: List[str]) -> Dict[str, str]:
     audio_paths = {}
 
     for path in paths:
-        print(f"Extracting audio from {filename(path)}...")
         output_path = os.path.join(temp_dir, f"{filename(path)}.wav")
 
-        ffmpeg.input(path).output(output_path, acodec="pcm_s16le", ac=1, ar="16k").run(
-            quiet=True, overwrite_output=True
-        )
+        cmd_args = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            path,
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            "-ar",
+            "16k",
+            output_path,
+        ]
+
+        run_ffmpeg_with_progress(cmd_args, f"Extracting audio from {filename(path)}...")
 
         audio_paths[path] = output_path
 
