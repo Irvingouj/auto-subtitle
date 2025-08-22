@@ -1,19 +1,18 @@
 import os
-from typing import Iterator, TextIO
+from typing import Iterator, TextIO, Dict, Any
 
 
-def str2bool(string):
+def str2bool(string: str) -> bool:
     string = string.lower()
     str2val = {"true": True, "false": False}
 
     if string in str2val:
         return str2val[string]
     else:
-        raise ValueError(
-            f"Expected one of {set(str2val.keys())}, got {string}")
+        raise ValueError(f"Expected one of {set(str2val.keys())}, got {string}")
 
 
-def format_timestamp(seconds: float, always_include_hours: bool = False):
+def format_timestamp(seconds: float, always_include_hours: bool = False) -> str:
     assert seconds >= 0, "non-negative timestamp expected"
     milliseconds = round(seconds * 1000.0)
 
@@ -30,7 +29,7 @@ def format_timestamp(seconds: float, always_include_hours: bool = False):
     return f"{hours_marker}{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 
-def write_srt(transcript: Iterator[dict], file: TextIO):
+def write_srt(transcript: Iterator[Dict[str, Any]], file: TextIO) -> None:
     for i, segment in enumerate(transcript, start=1):
         print(
             f"{i}\n"
@@ -42,5 +41,5 @@ def write_srt(transcript: Iterator[dict], file: TextIO):
         )
 
 
-def filename(path):
+def filename(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0]
